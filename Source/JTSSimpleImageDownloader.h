@@ -12,6 +12,6 @@
 
 + (NSURLSessionDataTask *)downloadImageForURL:(NSURL *)imageURL
                                  canonicalURL:(NSURL *)canonicalURL
-                                   completion:(void(^)(UIImage *image))completion;
+                                   completion:(void(^)(UIImage *image, NSData *))completion;
 
 @end
