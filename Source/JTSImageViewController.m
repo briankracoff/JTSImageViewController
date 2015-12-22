@@ -116,7 +116,8 @@ typedef struct {
 @property (assign, nonatomic) UIOffset imageDragOffsetFromImageCenter;
 
 // Image Downloading
-@property (strong, nonatomic) NSURLSessionDataTask *imageDownloadDataTask;
+@property (weak, nonatomic) id <JTSImageViewControllerImageDownloaderDelegate> imageDownloaderDelegate;
+@property (strong, nonatomic) NSURLSessionDataTask* imageDownloadDataTask;
 @property (strong, nonatomic) NSTimer *downloadProgressTimer;
 
 @end
@@ -131,7 +132,8 @@ typedef struct {
 
 - (instancetype)initWithImageInfo:(JTSImageInfo *)imageInfo
                              mode:(JTSImageViewControllerMode)mode
-                  backgroundStyle:(JTSImageViewControllerBackgroundOptions)backgroundOptions {
+                  backgroundStyle:(JTSImageViewControllerBackgroundOptions)backgroundOptions
+          imageDownloaderDelegate:(id<JTSImageViewControllerImageDownloaderDelegate>)imageDownloaderDelegate {
     
     self = [super initWithNibName:nil bundle:nil];
     if (self) {
@@ -140,6 +142,7 @@ typedef struct {
         _currentSnapshotRotationTransform = CGAffineTransformIdentity;
         _mode = mode;
         _backgroundOptions = backgroundOptions;
+        _imageDownloaderDelegate = imageDownloaderDelegate;
         if (_mode == JTSImageViewControllerMode_Image) {
             [self setupImageAndDownloadIfNecessary:imageInfo];
         }
@@ -389,49 +392,64 @@ typedef struct {
 - (void)setupImageAndDownloadIfNecessary:(JTSImageInfo *)imageInfo {
     if (imageInfo.image) {
         self.image = imageInfo.image;
+        return;
+    }
+
+    self.image = imageInfo.placeholderImage;
+
+    BOOL fromDisk = [imageInfo.imageURL.absoluteString hasPrefix:@"file://"];
+    _flags.imageIsBeingReadFromDisk = fromDisk;
+
+    NSURLSessionDataTask *task;
+    NSURL *imageURL = imageInfo.imageURL;
+    NSURL *canonicalImageURL = imageInfo.canonicalImageURL;
+
+    if ([self.imageDownloaderDelegate respondsToSelector:@selector(imageViewer:downloadImageForURL:canonicalURL:progress:completion:)]) {
+        [self.imageDownloaderDelegate imageViewer:self downloadImageForURL:imageURL canonicalURL:canonicalImageURL
+                                         progress:^(CGFloat progress) {
+                                             self.progressView.progress = progress;
+                                         }
+                                       completion:^(UIImage *image, NSData *imageData) {
+                                           [self handleImageDownloadCompletionWithImage:image data:imageData];
+                                       }];
     }
     else {
-        
-        self.image = imageInfo.placeholderImage;
-        
-        BOOL fromDisk = [imageInfo.imageURL.absoluteString hasPrefix:@"file://"];
-        _flags.imageIsBeingReadFromDisk = fromDisk;
-        
-        typeof(self) __weak weakSelf = self;
-        NSURLSessionDataTask *task = [JTSSimpleImageDownloader downloadImageForURL:imageInfo.imageURL canonicalURL:imageInfo.canonicalImageURL completion:^(UIImage *image, NSData *imageData) {
-            typeof(self) strongSelf = weakSelf;
-            [strongSelf cancelProgressTimer];
-            if (imageData && [self.imageViewDelegate respondsToSelector:@selector(imageViewer:setImageWithData:onImageView:)]) {
-                strongSelf.image = [UIImage imageWithData:imageData];
-                strongSelf.imageData = imageData;
-                if (strongSelf.isViewLoaded) {
-                    [self.imageViewDelegate imageViewer:self setImageWithData:imageData onImageView:self.imageView];
-                    [self updateLayoutsAfterSettingImage];
-                }
-            }
-            else if (image) {
-                if (strongSelf.isViewLoaded) {
-                    [strongSelf updateInterfaceWithImage:image];
-                } else {
-                    strongSelf.image = image;
-                }
-            } else if (strongSelf.image == nil) {
-                _flags.imageDownloadFailed = YES;
-                if (_flags.isPresented && _flags.isAnimatingAPresentationOrDismissal == NO) {
-                    [strongSelf dismiss:YES];
-                }
-                // If we're still presenting, at the end of presentation we'll auto dismiss.
-            }
+        self.imageDownloadDataTask = [JTSSimpleImageDownloader downloadImageForURL:imageURL canonicalURL:canonicalImageURL completion:^(UIImage *image, NSData *imageData) {
+            [self handleImageDownloadCompletionWithImage:image data:imageData];
         }];
-        
-        self.imageDownloadDataTask = task;
-        
         [self startProgressTimer];
+    }
+    
+    self.imageDownloadDataTask = task;
+}
+
+- (void)handleImageDownloadCompletionWithImage:(UIImage *)image data:(NSData *)imageData {
+    [self cancelProgressTimer];
+    if (imageData && [self.imageViewDelegate respondsToSelector:@selector(imageViewer:setImageWithData:onImageView:)]) {
+        self.image = [UIImage imageWithData:imageData];
+        self.imageData = imageData;
+        if (self.isViewLoaded) {
+            [self.imageViewDelegate imageViewer:self setImageWithData:imageData onImageView:self.imageView];
+            [self updateLayoutsAfterSettingImage];
+        }
+    }
+    else if (image) {
+        if (self.isViewLoaded) {
+            [self updateInterfaceWithImage:image];
+        } else {
+            self.image = image;
+        }
+    } else if (self.image == nil) {
+        _flags.imageDownloadFailed = YES;
+        if (_flags.isPresented && _flags.isAnimatingAPresentationOrDismissal == NO) {
+            [self dismiss:YES];
+        }
+        // If we're still presenting, at the end of presentation we'll auto dismiss.
     }
 }
 
 - (void)viewDidLoadForImageMode {
-    
+
     self.view.backgroundColor = [UIColor blackColor];
     self.view.autoresizingMask = UIViewAutoresizingFlexibleHeight | UIViewAutoresizingFlexibleWidth;
     

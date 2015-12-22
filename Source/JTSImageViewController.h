@@ -20,6 +20,7 @@
 @protocol JTSImageViewControllerAccessibilityDelegate;
 @protocol JTSImageViewControllerAnimationDelegate;
 @protocol JTSImageViewControllerImageViewDelegate;
+@protocol JTSImageViewControllerImageDownloaderDelegate;
 
 typedef NS_ENUM(NSInteger, JTSImageViewControllerMode) {
     JTSImageViewControllerMode_Image,
@@ -75,10 +76,13 @@ extern CGFloat const JTSImageViewController_DefaultBackgroundBlurRadius;
  
  @param backgroundStyle Currently, either scaled-and-dimmed, or scaled-dimmed-and-blurred. 
  The latter is like Tweetbot 3.0's background style.
+ 
+ @param imageDownloaderDelegate The delegate used to download remote images
  */
 - (instancetype)initWithImageInfo:(JTSImageInfo *)imageInfo
                              mode:(JTSImageViewControllerMode)mode
-                  backgroundStyle:(JTSImageViewControllerBackgroundOptions)backgroundOptions;
+                  backgroundStyle:(JTSImageViewControllerBackgroundOptions)backgroundOptions
+          imageDownloaderDelegate:(id<JTSImageViewControllerImageDownloaderDelegate>)imageDownloaderDelegate;
 
 /**
  JTSImageViewController is presented from viewController as a UIKit modal view controller.
@@ -245,8 +249,19 @@ extern CGFloat const JTSImageViewController_DefaultBackgroundBlurRadius;
 
 @end
 
+///---------------------------------------------------------------------------------------------------
+/// Image Downloader Delegate
+///---------------------------------------------------------------------------------------------------
 
+@protocol JTSImageViewControllerImageDownloaderDelegate <NSObject>
 
+- (void)imageViewer:(JTSImageViewController*)imageViewer
+downloadImageForURL:(NSURL *)imageURL
+       canonicalURL:(NSURL *)canonicalURL
+           progress:(void(^)(CGFloat))progress
+         completion:(void(^)(UIImage *image, NSData *))completion;
+
+@end
 
 
 
