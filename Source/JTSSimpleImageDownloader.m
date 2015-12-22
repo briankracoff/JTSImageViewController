@@ -12,7 +12,7 @@
 
 @implementation JTSSimpleImageDownloader
 
-+ (NSURLSessionDataTask *)downloadImageForURL:(NSURL *)imageURL canonicalURL:(NSURL *)canonicalURL completion:(void (^)(UIImage *))completion {
++ (NSURLSessionDataTask *)downloadImageForURL:(NSURL *)imageURL canonicalURL:(NSURL *)canonicalURL completion:(void (^)(UIImage *, NSData *))completion {
     
     NSURLSessionDataTask *dataTask = nil;
     
@@ -23,7 +23,7 @@
         if (request == nil) {
             dispatch_async(dispatch_get_main_queue(), ^{
                 if (completion) {
-                    completion(nil);
+                    completion(nil, nil);
                 }
             });
         }
@@ -39,7 +39,7 @@
                     
                     dispatch_async(dispatch_get_main_queue(), ^{
                         if (completion) {
-                            completion(image);
+                            completion(image, data);
                         }
                     });
                     

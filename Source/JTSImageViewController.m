@@ -78,6 +78,7 @@ typedef struct {
 // General Info
 @property (strong, nonatomic, readwrite) JTSImageInfo *imageInfo;
 @property (strong, nonatomic, readwrite) UIImage *image;
+@property (strong, nonatomic, readwrite) NSData *imageData;
 @property (assign, nonatomic, readwrite) JTSImageViewControllerTransition transition;
 @property (assign, nonatomic, readwrite) JTSImageViewControllerMode mode;
 @property (assign, nonatomic, readwrite) JTSImageViewControllerBackgroundOptions backgroundOptions;
@@ -397,10 +398,18 @@ typedef struct {
         _flags.imageIsBeingReadFromDisk = fromDisk;
         
         typeof(self) __weak weakSelf = self;
-        NSURLSessionDataTask *task = [JTSSimpleImageDownloader downloadImageForURL:imageInfo.imageURL canonicalURL:imageInfo.canonicalImageURL completion:^(UIImage *image) {
+        NSURLSessionDataTask *task = [JTSSimpleImageDownloader downloadImageForURL:imageInfo.imageURL canonicalURL:imageInfo.canonicalImageURL completion:^(UIImage *image, NSData *imageData) {
             typeof(self) strongSelf = weakSelf;
             [strongSelf cancelProgressTimer];
-            if (image) {
+            if (imageData && [self.imageViewDelegate respondsToSelector:@selector(imageViewer:setImageWithData:onImageView:)]) {
+                strongSelf.image = [UIImage imageWithData:imageData];
+                strongSelf.imageData = imageData;
+                if (strongSelf.isViewLoaded) {
+                    [self.imageViewDelegate imageViewer:self setImageWithData:imageData onImageView:self.imageView];
+                    [self updateLayoutsAfterSettingImage];
+                }
+            }
+            else if (image) {
                 if (strongSelf.isViewLoaded) {
                     [strongSelf updateInterfaceWithImage:image];
                 } else {
@@ -443,8 +452,13 @@ typedef struct {
     
     CGRect referenceFrameInWindow = [self.imageInfo.referenceView convertRect:self.imageInfo.referenceRect toView:nil];
     CGRect referenceFrameInMyView = [self.view convertRect:referenceFrameInWindow fromView:nil];
-    
-    self.imageView = [[UIImageView alloc] initWithFrame:referenceFrameInMyView];
+
+    if ([self.imageViewDelegate respondsToSelector:@selector(imageViewForImageViewer:)]) {
+        self.imageView = [self.imageViewDelegate imageViewForImageViewer:self];
+        self.imageView.frame = referenceFrameInMyView;
+    } else {
+        self.imageView = [[UIImageView alloc] initWithFrame:referenceFrameInMyView];
+    }
     self.imageView.layer.cornerRadius = self.imageInfo.referenceCornerRadius;
     self.imageView.contentMode = UIViewContentModeScaleAspectFill;
     self.imageView.userInteractionEnabled = YES;
@@ -487,6 +501,9 @@ typedef struct {
     
     if (self.image) {
         [self updateInterfaceWithImage:self.image];
+    } else if (self.imageData && [self.imageViewDelegate respondsToSelector:@selector(imageViewer:setImageWithData:onImageView:)]) {
+        [self.imageViewDelegate imageViewer:self setImageWithData:self.imageData onImageView:self.imageView];
+        [self updateLayoutsAfterSettingImage];
     }
 }
 
@@ -718,7 +735,7 @@ typedef struct {
                      CGPoint endCenterForImageView = CGPointMake(weakSelf.view.bounds.size.width/2.0f, weakSelf.view.bounds.size.height/2.0f);
                      weakSelf.imageView.center = endCenterForImageView;
                      
-                     if (weakSelf.image == nil) {
+                     if (weakSelf.image == nil && weakSelf.imageData == nil) {
                          weakSelf.progressContainer.alpha = 1.0f;
                      }
                      
@@ -833,7 +850,7 @@ typedef struct {
                  weakSelf.scrollView.alpha = 1.0f;
                  weakSelf.scrollView.transform = CGAffineTransformIdentity;
                  
-                 if (weakSelf.image == nil) {
+                 if (weakSelf.image == nil && weakSelf.imageData == nil) {
                      weakSelf.progressContainer.alpha = 1.0f;
                  }
                  
@@ -1334,14 +1351,19 @@ typedef struct {
     if (image) {
         self.image = image;
         self.imageView.image = image;
-        self.progressContainer.alpha = 0;
-        
-        self.imageView.backgroundColor = [self backgroundColorForImageView];
-        
-        // Don't update the layouts during a drag.
-        if (_flags.isDraggingImage == NO) {
-            [self updateLayoutsForCurrentOrientation];
-        }
+        [self updateLayoutsAfterSettingImage];
+    }
+}
+
+- (void)updateLayoutsAfterSettingImage {
+
+    self.progressContainer.alpha = 0;
+
+    self.imageView.backgroundColor = [self backgroundColorForImageView];
+
+    // Don't update the layouts during a drag.
+    if (_flags.isDraggingImage == NO) {
+        [self updateLayoutsForCurrentOrientation];
     }
 }
 
@@ -1469,7 +1491,7 @@ typedef struct {
     if (suppressAdjustments == NO) {
         if (self.image) {
             self.imageView.frame = [self resizedFrameForAutorotatingImageView:self.image.size];
-        } else {
+        } else if (self.imageViewDelegate == nil) {
             self.imageView.frame = [self resizedFrameForAutorotatingImageView:self.imageInfo.referenceRect.size];
         }
         self.scrollView.contentSize = self.imageView.frame.size;
